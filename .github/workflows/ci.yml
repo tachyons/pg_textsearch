@@ -127,7 +127,11 @@ jobs:
       - name: Build gem
         run: gem build pg_textsearch.gemspec
 
-      - name: Publish to RubyGems (trusted publishing)
-        uses: rubygems/release-gem@v2
+      - name: Configure RubyGems credentials (trusted publishing)
+        uses: rubygems/configure-rubygems-credentials@main
         with:
+          rubygems_server: https://rubygems.org
           owner: ${{ secrets.RUBYGEMS_OWNER }}
+
+      - name: Publish to RubyGems
+        run: gem push pkg/*.gem --host https://rubygems.org
