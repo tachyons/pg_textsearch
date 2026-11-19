@@ -6,10 +6,13 @@ module PgTextsearch
   # composes unchanged.
   module Model
     # has_bm25 :content, index: :docs_idx, unaccent: true, synonyms: true
-    def has_bm25(target, index:, **default_options)
+    # has_bm25 "data->>'description'", index: :events_expr_idx, expression: true
+    def has_bm25(target, index:, expression: nil, **default_options)
       class_attribute :bm25_indexes, instance_accessor: false, default: {} unless respond_to?(:bm25_indexes)
+      class_attribute :bm25_expressions, instance_accessor: false, default: {} unless respond_to?(:bm25_expressions)
       class_attribute :bm25_default_options, instance_accessor: false, default: {} unless respond_to?(:bm25_default_options)
       self.bm25_indexes = bm25_indexes.merge(target.to_s => index.to_s)
+      self.bm25_expressions = bm25_expressions.merge(target.to_s => expression) if expression
       self.bm25_default_options = default_options
     end
 
@@ -27,8 +30,11 @@ module PgTextsearch
       options = defaults.merge(options)
 
       index ||= bm25_indexes[target.to_s] if respond_to?(:bm25_indexes)
+      expression = bm25_expressions[target.to_s] if respond_to?(:bm25_expressions)
 
-      target_sql = bm25_target_sql(target, options[:unaccent])
+      # Use expression if available, otherwise use target column
+      target_for_sql = expression || target
+      target_sql = bm25_target_sql(target_for_sql, options[:unaccent])
       query_sql = bm25_query_sql(query, index, options)
       score_sql = "#{target_sql} <@> #{query_sql}"
 
@@ -41,14 +47,14 @@ module PgTextsearch
       end
 
       # Score selection
+      name = if options[:select_score] == true || options[:select_score_only] == true
+               "bm25_score"
+             elsif options[:select_score]
+               options[:select_score].to_s
+             else
+               options[:select_score_only].to_s
+             end
       if options[:select_score] || options[:select_score_only]
-        name = if options[:select_score] == true || options[:select_score_only] == true
-                 "bm25_score"
-               elsif options[:select_score]
-                 options[:select_score].to_s
-               else
-                 options[:select_score_only].to_s
-               end
         relation = relation.select(arel_table[Arel.star],
                                    Arel.sql("#{score_sql} AS #{connection.quote_column_name(name)}"))
       end
@@ -68,8 +74,8 @@ module PgTextsearch
     end
 
     # Match operator for use in WHERE clauses
-    # Usage: scope.where("search_text <@> ? < 0", query)
-    def bm25_match(query, index: nil, **options)
+    # Usage: scope.bm25_match(:search_text, query, index: :idx)
+    def bm25_match(target, query, index: nil, **options)
       ensure_pg_textsearch_available!
 
       index ||= bm25_indexes[target.to_s] if respond_to?(:bm25_indexes)
