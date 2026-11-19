@@ -129,3 +129,5 @@ jobs:
 
       - name: Publish to RubyGems (trusted publishing)
         uses: rubygems/release-gem@v1
+        with:
+          owner: ${{ secrets.RUBYGEMS_OWNER }}
