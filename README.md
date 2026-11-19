@@ -517,6 +517,13 @@ PgTextsearch::Maintenance.enable_thesaurus!('thesaurus_en', 'thesaurus_en')
 
 ---
 
+## Demo
+
+- **E-commerce sample app:** [tachyons/pg_textsearch_ecom_sample](https://github.com/tachyons/pg_textsearch_ecom_sample)
+- **Runnable scripts:** see [`samples/`](samples/) in this repo for focused, single-file examples.
+
+---
+
 ## What's Intentionally Left Out
 
 To keep the gem under ~300 lines and avoid fighting ActiveRecord:
