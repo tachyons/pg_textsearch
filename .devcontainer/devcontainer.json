@@ -1,0 +1,32 @@
+{
+  "name": "pg_textsearch",
+  "image": "mcr.microsoft.com/devcontainers/ruby:3.3-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/postgresql:1": {
+      "version": "18",
+      "password": "postgres"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "shopify.ruby-lsp",
+        "rubocop.vscode-rubocop",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "ruby.lint": {
+          "rubocop": true
+        }
+      }
+    }
+  },
+  "forwardPorts": [5432],
+  "remoteEnv": {
+    "PGHOST": "localhost",
+    "PGUSER": "postgres",
+    "PGPASSWORD": "postgres",
+    "PGDATABASE": "postgres"
+  }
+}
