@@ -118,4 +118,57 @@ class PgTextsearchIssuesTest < Minitest::Test
     sql = IssueProductNoDefault.bm25_search(:search_text, "test", index: :idx, select_score: true).to_sql
     assert_match(/ORDER BY/, sql, "select_score: true should still add ORDER BY")
   end
+
+  # Issue #9: bm25_match should accept target as first arg and return SQL predicate
+  def test_bm25_match_accepts_target_and_returns_predicate
+    predicate = IssueProductNoDefault.bm25_match(:search_text, "test", index: :idx)
+    assert_match(/<@>/, predicate.to_s)
+    assert_match(/< 0/, predicate.to_s)
+    sql = IssueProductNoDefault.where(predicate).to_sql
+    assert_match(/WHERE/, sql)
+  end
+
+  # Issue #15: bm25_search filters rows by default
+  def test_bm25_search_filters_by_default
+    sql = IssueProductNoDefault.bm25_search(:search_text, "test", index: :idx).to_sql
+    assert_match(/WHERE/, sql)
+    assert_match(/<@>.*< 0/m, sql)
+  end
+
+  def test_bm25_search_filter_false_disables_filter
+    sql = IssueProductNoDefault.bm25_search(:search_text, "test", index: :idx, filter: false).to_sql
+    assert_match(/ORDER BY/, sql)
+    refute_match(/< 0/, sql)
+  end
+
+  # Issue #16: prefix: true combined with any_word: true
+  def test_prefix_combined_with_any_word
+    sql = IssueProductNoDefault.bm25_search(:search_text, "wireless phones", index: :idx, prefix: true, any_word: true).to_sql
+    assert_match(/wireless:\*/, sql)
+    assert_match(/phones:\*/, sql)
+    assert_match(/\|/, sql)
+  end
+
+  # Issue #17: highlight should handle tsquery operators safely
+  def test_highlight_handles_tsquery_operators
+    sql = IssueProductNoDefault.bm25_search(:search_text, "sony & canon", index: :idx, highlight: true).to_sql
+    assert_match(/plainto_tsquery/, sql)
+    assert_match(/ts_headline/, sql)
+  end
+
+  # Issue #18: has_bm25 defaults stored per target
+  def test_has_bm25_defaults_per_target
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "products"
+      has_bm25 :search_text, index: :idx1, prefix: true
+      has_bm25 :name, index: :idx2, unaccent: true
+    end
+
+    sql1 = klass.bm25_search(:search_text, "iph", index: :idx1).to_sql
+    assert_match(/iph:\*/, sql1)
+    refute_match(/unaccent\("search_text"\)/, sql1)
+
+    sql2 = klass.bm25_search(:name, "cafe", index: :idx2).to_sql
+    assert_match(/unaccent\("name"\)/, sql2)
+  end
 end

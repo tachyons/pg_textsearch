@@ -78,7 +78,7 @@ def run
   seed_data
 
   puts "\n=== Prefix Matching (autocomplete) ==="
-  # "wire" matches "wireless", "Wire" etc.
+  # "iph" matches "iphone", "Wire" etc.
   results = Product.bm25_search(:search_text, "wire", index: :products_search_idx, prefix: true).limit(5)
   results.each { |p| puts "  #{p.name}" }
 

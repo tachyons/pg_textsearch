@@ -13,20 +13,20 @@ module PgTextsearch
       class_attribute :bm25_default_options, instance_accessor: false, default: {} unless respond_to?(:bm25_default_options)
       self.bm25_indexes = bm25_indexes.merge(target.to_s => index.to_s)
       self.bm25_expressions = bm25_expressions.merge(target.to_s => expression) if expression
-      self.bm25_default_options = default_options
+      self.bm25_default_options = bm25_default_options.merge(target.to_s => default_options)
     end
 
     # Document.bm25_search(:content, "database system", index: :docs_idx,
     #   prefix: true, any_word: true, negation: true, unaccent: true,
     #   fuzzy: {threshold: 0.3}, synonyms: true,
     #   select_score: true, select_score_only: false, highlight: true,
-    #   ranked_by: "expr", order_within_rank: "col DESC", where: true
+    #   ranked_by: "expr", order_within_rank: "col DESC", where: true, filter: true
     # ).limit(5)
     def bm25_search(target, query, index: nil, **options)
       ensure_pg_textsearch_available!
 
-      # Merge with model-level defaults
-      defaults = respond_to?(:bm25_default_options) ? bm25_default_options : {}
+      # Merge with model-level defaults (per-target)
+      defaults = respond_to?(:bm25_default_options) ? bm25_default_options[target.to_s] || {} : {}
       options = defaults.merge(options)
 
       index ||= bm25_indexes[target.to_s] if respond_to?(:bm25_indexes)
@@ -67,6 +67,11 @@ module PgTextsearch
         relation = apply_fuzzy(relation, target, query, options[:fuzzy])
       end
 
+      # Filtering - add WHERE clause for actual matching (unless filter: false)
+      if options[:filter] != false
+        relation = relation.where(Arel.sql("#{target_sql} <@> #{query_sql} < 0"))
+      end
+
       # Synonyms - uses thesaurus dictionary (already handled via text_config)
       # Just pass through; the index must be created with thesaurus dict
 
@@ -74,7 +79,7 @@ module PgTextsearch
     end
 
     # Match operator for use in WHERE clauses
-    # Usage: scope.bm25_match(:search_text, query, index: :idx)
+    # Usage: scope.where(Event.bm25_match("data->>'description'", "query", index: :idx))
     def bm25_match(target, query, index: nil, **options)
       ensure_pg_textsearch_available!
 
@@ -82,7 +87,7 @@ module PgTextsearch
       query_sql = bm25_query_sql(query, index, options)
       target_sql = bm25_target_sql(target, options[:unaccent])
 
-      where(Arel.sql("#{target_sql} <@> #{query_sql} < 0"))
+      Arel.sql("#{target_sql} <@> #{query_sql} < 0")
     end
 
     private
@@ -100,11 +105,18 @@ module PgTextsearch
       # Build the query text with options
       q = query.to_s.dup
 
+      # Split into words first
+      words = q.split
+
       # Prefix matching - append :* to each word
-      q = q.split.map { |w| "#{w}:*" }.join(" ") if options[:prefix]
+      words = words.map { |w| "#{w}:*" } if options[:prefix]
 
       # Any word (OR) - join with |
-      q = q.split.map { |w| w.delete_suffix(":*") }.join(" | ") if options[:any_word]
+      q = if options[:any_word]
+            words.join(" | ")
+          else
+            words.join(" ")
+          end
 
       # Negation - words starting with ! are already handled by tsquery syntax
       # Just pass through as-is
@@ -140,8 +152,6 @@ module PgTextsearch
     def apply_highlight(relation, target, query, _index, highlight_opts)
       # ts_headline(text, query, [options])
       target_sql = bm25_target_sql(target, false)
-      # Convert query to valid tsquery format: join words with & (AND)
-      query_for_highlight = query.to_s.split.join(" & ")
 
       # Build ts_headline options
       hl_opts = highlight_opts.is_a?(Hash) ? highlight_opts : {}
@@ -161,8 +171,8 @@ module PgTextsearch
                  "ShortWord=#{short_word}, HighlightAll=#{highlight_all}, " \
                  "MaxFragments=#{max_fragments}, FragmentDelimiter=#{esc.call(fragment_delim)}"
 
-      # Use to_tsquery for highlighting (not bm25query)
-      tsquery = "to_tsquery('english', #{sanitize_sql_array(["?", query_for_highlight])})"
+      # Use plainto_tsquery for highlighting - handles all user input safely
+      tsquery = "plainto_tsquery('english', #{sanitize_sql_array(["?", query.to_s])})"
       # The opts_str is a string literal in SQL, so escape internal single quotes
       highlight_sql = "ts_headline('english', #{target_sql}, #{tsquery}, '#{opts_str.gsub("'", "''")}')"
 
