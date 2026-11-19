@@ -130,7 +130,8 @@ jobs:
       - name: Configure RubyGems credentials (trusted publishing)
         uses: rubygems/configure-rubygems-credentials@main
         with:
-          rubygems_server: https://rubygems.org
+          gem-server: https://rubygems.org
+          audience: rubygems.org
           owner: ${{ secrets.RUBYGEMS_OWNER }}
 
       - name: Publish to RubyGems
