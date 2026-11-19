@@ -16,7 +16,8 @@ module PgTextsearch
     # Document.bm25_search(:content, "database system", index: :docs_idx,
     #   prefix: true, any_word: true, negation: true, unaccent: true,
     #   fuzzy: {threshold: 0.3}, synonyms: true,
-    #   select_score: true, highlight: true, ranked_by: "expr", order_within_rank: "col DESC"
+    #   select_score: true, select_score_only: false, highlight: true,
+    #   ranked_by: "expr", order_within_rank: "col DESC", where: true
     # ).limit(5)
     def bm25_search(target, query, index: nil, **options)
       ensure_pg_textsearch_available!
@@ -31,14 +32,23 @@ module PgTextsearch
       query_sql = bm25_query_sql(query, index, options)
       score_sql = "#{target_sql} <@> #{query_sql}"
 
-      # Build ORDER BY
-      order_sql = build_order_sql(score_sql, options)
-
-      relation = order(Arel.sql(order_sql))
+      # Build ORDER BY (unless select_score_only: true)
+      if options[:select_score_only]
+        relation = all
+      else
+        order_sql = build_order_sql(score_sql, options)
+        relation = order(Arel.sql(order_sql))
+      end
 
       # Score selection
-      if options[:select_score]
-        name = options[:select_score] == true ? "bm25_score" : options[:select_score].to_s
+      if options[:select_score] || options[:select_score_only]
+        name = if options[:select_score] == true || options[:select_score_only] == true
+                 "bm25_score"
+               elsif options[:select_score]
+                 options[:select_score].to_s
+               else
+                 options[:select_score_only].to_s
+               end
         relation = relation.select(arel_table[Arel.star],
                                    Arel.sql("#{score_sql} AS #{connection.quote_column_name(name)}"))
       end
@@ -46,13 +56,27 @@ module PgTextsearch
       # Highlighting
       relation = apply_highlight(relation, target, query, index, options[:highlight]) if options[:highlight]
 
-      # Fuzzy search (pg_trgm) - adds WHERE clause
-      relation = apply_fuzzy(relation, target, query, options[:fuzzy]) if options[:fuzzy]
+      # Fuzzy search (pg_trgm) - adds WHERE clause (unless where: false)
+      if options[:fuzzy] && options[:where] != false
+        relation = apply_fuzzy(relation, target, query, options[:fuzzy])
+      end
 
       # Synonyms - uses thesaurus dictionary (already handled via text_config)
       # Just pass through; the index must be created with thesaurus dict
 
       relation
+    end
+
+    # Match operator for use in WHERE clauses
+    # Usage: scope.where("search_text <@> ? < 0", query)
+    def bm25_match(query, index: nil, **options)
+      ensure_pg_textsearch_available!
+
+      index ||= bm25_indexes[target.to_s] if respond_to?(:bm25_indexes)
+      query_sql = bm25_query_sql(query, index, options)
+      target_sql = bm25_target_sql(target, options[:unaccent])
+
+      where(Arel.sql("#{target_sql} <@> #{query_sql} < 0"))
     end
 
     private

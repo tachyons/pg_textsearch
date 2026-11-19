@@ -125,9 +125,15 @@ module PgTextsearch
     end
 
     def extension_installed?(name)
+      return false unless postgresql?
+
       connection.select_value(<<~SQL)
         SELECT 1 FROM pg_extension WHERE extname = '#{name}'
       SQL
+    end
+
+    def postgresql?
+      connection.adapter_name.downcase.include?("postgres")
     end
   end
 end
