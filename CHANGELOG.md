@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-19
+
+### Fixed
+- **#22**: `prefix: true` filter now quotes/escapes tsquery lexemes in the `@@ to_tsquery(...)` path, preventing `PG::SyntaxError` for inputs containing tsquery operators or punctuation (e.g. `:`, `&`, parentheses).
+
 ## [0.1.5] - 2026-11-19
 
 ### Fixed

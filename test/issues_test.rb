@@ -35,7 +35,7 @@ class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLen
   # Issue #1: prefix: true should filter via @@ to_tsquery (supports :* expansion)
   def test_prefix_applies_to_where_clause
     sql = IssueProductNoDefault.bm25_search(:search_text, "iph", index: :idx, prefix: true).to_sql
-    assert_match(/WHERE .*@@ to_tsquery\('english', 'iph:\*'\)/m, sql)
+    assert_match(/WHERE .*@@ to_tsquery\('english', '''iph'':\*'\)/m, sql)
     assert_match(/ORDER BY .*to_bm25query\('iph:\*', 'idx'\)/m, sql)
   end
 
@@ -202,5 +202,16 @@ class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLen
     sql = IssueProductNoDefault.bm25_search(:search_text, "café", index: :idx, unaccent: true).to_sql
     assert_match(/to_bm25query\(unaccent\('café'\), 'idx'\)/, sql)
     refute_match(/to_bm25query\('unaccent/, sql)
+  end
+
+  # Issue #22: prefix filter should quote lexemes in to_tsquery input
+  def test_prefix_filter_quotes_tsquery_lexemes
+    sql = IssueProductNoDefault.bm25_search(:search_text, "rock & roll", index: :idx, prefix: true).to_sql
+    assert_match(/@@ to_tsquery\('english', '''rock'':\* & ''&'':\* & ''roll'':\*'\)/, sql)
+  end
+
+  def test_prefix_filter_quotes_lexemes_with_special_chars
+    sql = IssueProductNoDefault.bm25_search(:search_text, "a:b (x)", index: :idx, prefix: true).to_sql
+    assert_match(/@@ to_tsquery\('english', '''a:b'':\* & ''\(x\)'':\*'\)/, sql)
   end
 end

@@ -143,12 +143,11 @@ module PgTextsearch
     end
 
     def bm25_prefix_filter_sql(target_sql, query, options)
-      words = query.to_s.split
-      words = words.map { |w| "#{w}:*" }
+      lexemes = query.to_s.split.map { |w| "'#{w.gsub("'", "''")}':*" }
       tsquery_text = if options[:any_word]
-                       words.join(" | ")
+                       lexemes.join(" | ")
                      else
-                       words.join(" & ")
+                       lexemes.join(" & ")
                      end
 
       config = options[:text_config] || options[:ts_config] || "english"
