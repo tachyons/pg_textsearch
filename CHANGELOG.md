@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-19
+
+### Fixed
+- **#1**: `prefix: true` now uses `@@ to_tsquery(...)` for BM25 search/match filtering so `:*` prefix expansion works at runtime (while keeping BM25 `<@>` ordering).
+- **#20**: `bm25_match` now resolves expressions declared via `has_bm25` (`expression:` / aliased expression targets), matching `bm25_search` behavior.
+- **#21**: `unaccent: true` now applies unaccent as a SQL expression in the `to_bm25query(...)` argument (not a quoted literal), so query-side accent normalization is effective.
+
 ## [0.1.4] - 2026-11-19
 
 ### Fixed

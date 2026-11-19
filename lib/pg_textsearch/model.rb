@@ -71,7 +71,12 @@ module PgTextsearch
 
       # Filtering - add WHERE clause for actual matching (unless filter: false)
       if options[:filter] != false
-        relation = relation.where(Arel.sql("#{target_sql} <@> #{query_sql} < 0"))
+        filter_sql = if options[:prefix]
+                       bm25_prefix_filter_sql(target_sql, query, options)
+                     else
+                       "#{target_sql} <@> #{query_sql} < 0"
+                     end
+        relation = relation.where(Arel.sql(filter_sql))
       end
 
       # Synonyms - uses thesaurus dictionary (already handled via text_config)
@@ -86,10 +91,17 @@ module PgTextsearch
       ensure_pg_textsearch_available!
 
       index ||= bm25_indexes[target.to_s] if respond_to?(:bm25_indexes)
+      expression = bm25_expressions[target.to_s] if respond_to?(:bm25_expressions)
+      target_for_sql = expression || target
       query_sql = bm25_query_sql(query, index, options)
-      target_sql = bm25_target_sql(target, options[:unaccent])
+      target_sql = bm25_target_sql(target_for_sql, options[:unaccent])
 
-      Arel.sql("#{target_sql} <@> #{query_sql} < 0")
+      predicate = if options[:prefix]
+                    bm25_prefix_filter_sql(target_sql, query, options)
+                  else
+                    "#{target_sql} <@> #{query_sql} < 0"
+                  end
+      Arel.sql(predicate)
     end
 
     private
@@ -104,33 +116,49 @@ module PgTextsearch
     end
 
     def bm25_query_sql(query, index, options)
-      # Build the query text with options
-      q = query.to_s.dup
+      q = bm25_processed_query_text(query, options)
 
-      # Split into words first
-      words = q.split
-
-      # Prefix matching - append :* to each word
-      words = words.map { |w| "#{w}:*" } if options[:prefix]
-
-      # Any word (OR) - join with |
-      q = if options[:any_word]
-            words.join(" | ")
-          else
-            words.join(" ")
-          end
-
-      # Negation - words starting with ! are already handled by tsquery syntax
-      # Just pass through as-is
-
-      # Unaccent
-      q = "unaccent(#{sanitize_sql_array(["?", q])})" if options[:unaccent]
+      query_arg = if options[:unaccent]
+                    "unaccent(#{connection.quote(q)})"
+                  else
+                    connection.quote(q)
+                  end
 
       if index
-        sanitize_sql_array(["to_bm25query(?, ?)", q, index.to_s])
+        "to_bm25query(#{query_arg}, #{connection.quote(index.to_s)})"
       else
-        sanitize_sql_array(["to_bm25query(?)", q])
+        "to_bm25query(#{query_arg})"
       end
+    end
+
+    def bm25_processed_query_text(query, options)
+      words = query.to_s.split
+      words = words.map { |w| "#{w}:*" } if options[:prefix]
+
+      if options[:any_word]
+        words.join(" | ")
+      else
+        words.join(" ")
+      end
+    end
+
+    def bm25_prefix_filter_sql(target_sql, query, options)
+      words = query.to_s.split
+      words = words.map { |w| "#{w}:*" }
+      tsquery_text = if options[:any_word]
+                       words.join(" | ")
+                     else
+                       words.join(" & ")
+                     end
+
+      config = options[:text_config] || options[:ts_config] || "english"
+      query_arg = if options[:unaccent]
+                    "unaccent(#{connection.quote(tsquery_text)})"
+                  else
+                    connection.quote(tsquery_text)
+                  end
+
+      "#{target_sql} @@ to_tsquery(#{connection.quote(config)}, #{query_arg})"
     end
 
     def build_order_sql(score_sql, options)

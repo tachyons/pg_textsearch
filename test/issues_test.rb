@@ -32,11 +32,10 @@ class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLen
     # No database needed for SQL generation tests
   end
 
-  # Issue #1: prefix: true doesn't apply to WHERE clause matching
+  # Issue #1: prefix: true should filter via @@ to_tsquery (supports :* expansion)
   def test_prefix_applies_to_where_clause
-    # When using prefix: true, both WHERE and ORDER BY should use the prefixed query
     sql = IssueProductNoDefault.bm25_search(:search_text, "iph", index: :idx, prefix: true).to_sql
-    assert_match(/WHERE .*to_bm25query\('iph:\*', 'idx'\)/m, sql)
+    assert_match(/WHERE .*@@ to_tsquery\('english', 'iph:\*'\)/m, sql)
     assert_match(/ORDER BY .*to_bm25query\('iph:\*', 'idx'\)/m, sql)
   end
 
@@ -49,7 +48,7 @@ class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLen
   # Issue #2: unaccent: true requires manual unaccent() on query parameter
   def test_unaccent_applies_to_query_parameter
     sql = IssueProductNoDefault.bm25_search(:search_text, "café", index: :idx, unaccent: true).to_sql
-    assert_match(/unaccent/, sql, "unaccent: true should wrap query in unaccent()")
+    assert_match(/to_bm25query\(unaccent\(/, sql, "unaccent: true should wrap query argument in unaccent()")
   end
 
   # Issue #3: fuzzy/negation options add unwanted WHERE conditions
@@ -184,5 +183,24 @@ class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLen
                             "iphone", index: :products_expr_idx).to_sql
     assert_match(/coalesce\(name, ''\) \|\| ' ' \|\| coalesce\(description, ''\) <@>/, sql)
     refute_match(/WHERE \(true <@>/, sql)
+  end
+
+  # Issue #20: bm25_match should use registered expression
+  def test_bm25_match_uses_registered_expression
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "events"
+      has_bm25 :desc, index: :events_desc_idx, expression: "data->>'description'"
+    end
+
+    predicate = klass.bm25_match(:desc, "network", index: :events_desc_idx)
+    assert_match(/data->>'description' <@>/, predicate.to_s)
+    refute_match(/"desc"/, predicate.to_s)
+  end
+
+  # Issue #21: unaccent should be applied as SQL expression, not literal text
+  def test_unaccent_query_not_passed_as_literal
+    sql = IssueProductNoDefault.bm25_search(:search_text, "café", index: :idx, unaccent: true).to_sql
+    assert_match(/to_bm25query\(unaccent\('café'\), 'idx'\)/, sql)
+    refute_match(/to_bm25query\('unaccent/, sql)
   end
 end
