@@ -127,7 +127,21 @@ jobs:
       - name: Build gem
         run: gem build pg_textsearch.gemspec
 
-      - name: Publish to RubyGems
-        run: gem push pg_textsearch-*.gem --host https://rubygems.org
-        env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+      # Trusted publishing: exchange OIDC token for RubyGems API key with owner
+      # The owner (96754) is the RubyGems account ID that will own the gem
+      - name: Exchange OIDC token for RubyGems API key
+        run: |
+          jwt=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | jq -r .value)
+          key=$(curl -fsS -X POST \
+            https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token \
+            -H 'content-type: application/json' \
+            -d "{\"jwt\":\"$jwt\",\"owner\":\"96754\"}" | jq -r .rubygems_api_key)
+          mkdir -p "$HOME/.gem"
+          printf -- "---\n:rubygems_api_key: %s\n" "$key" > "$HOME/.gem/credentials"
+          chmod 0600 "$HOME/.gem/credentials"
+
+      - name: Build and publish gem
+        run: |
+          gem build pg_textsearch.gemspec
+          gem push pg_textsearch-*.gem
