@@ -27,17 +27,17 @@ ActiveRecord::Schema.define do
   end
 end
 
-class PgTextsearchIssuesTest < Minitest::Test
+class PgTextsearchIssuesTest < Minitest::Test # rubocop:disable Metrics/ClassLength
   def setup
     # No database needed for SQL generation tests
   end
 
   # Issue #1: prefix: true doesn't apply to WHERE clause matching
   def test_prefix_applies_to_where_clause
-    # When using prefix: true, the WHERE clause should use the prefixed query
-    # For SQLite tests, we just verify the query SQL is built correctly
+    # When using prefix: true, both WHERE and ORDER BY should use the prefixed query
     sql = IssueProductNoDefault.bm25_search(:search_text, "iph", index: :idx, prefix: true).to_sql
-    assert_match(/iph:\*/, sql, "prefix: true should add :* to query terms")
+    assert_match(/WHERE .*to_bm25query\('iph:\*', 'idx'\)/m, sql)
+    assert_match(/ORDER BY .*to_bm25query\('iph:\*', 'idx'\)/m, sql)
   end
 
   def test_prefix_with_multiple_terms
@@ -170,5 +170,19 @@ class PgTextsearchIssuesTest < Minitest::Test
 
     sql2 = klass.bm25_search(:name, "cafe", index: :idx2).to_sql
     assert_match(/unaccent\("name"\)/, sql2)
+  end
+
+  # Issue #19: expression: true should use the target as the expression
+  def test_has_bm25_expression_true_uses_target
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "products"
+      has_bm25 "coalesce(name, '') || ' ' || coalesce(description, '')",
+               index: :products_expr_idx, expression: true
+    end
+
+    sql = klass.bm25_search("coalesce(name, '') || ' ' || coalesce(description, '')",
+                            "iphone", index: :products_expr_idx).to_sql
+    assert_match(/coalesce\(name, ''\) \|\| ' ' \|\| coalesce\(description, ''\) <@>/, sql)
+    refute_match(/WHERE \(true <@>/, sql)
   end
 end

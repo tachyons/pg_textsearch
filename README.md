@@ -36,28 +36,34 @@ bundle add pg_textsearch
 ## Core API
 
 ```ruby
-# Model declaration (infers index automatically)
+# Model declaration
 class Product < ApplicationRecord
   has_bm25 :name, index: :products_name_idx
   has_bm25 :description, index: :products_desc_idx
   has_bm25 "coalesce(name, '') || ' ' || coalesce(description, '')", index: :products_all_idx
 end
 
-# Basic search
-Product.bm25_search(:name, "wireless headphones").limit(10)
+# Basic search (adds BM25 filter + ORDER BY)
+Product.bm25_search(:name, "wireless headphones", index: :products_name_idx).limit(10)
 
-# With explicit index (required for partial indexes, prepared statements)
+# With explicit index (required for prepared statements/partial indexes)
 Product.bm25_search(:description, "noise cancelling", index: :products_desc_idx).limit(10)
 
 # Compose with standard ActiveRecord
 Product
   .where(active: true, category: "electronics")
-  .bm25_search(:name, "wireless headphones")
+  .bm25_search(:name, "wireless headphones", index: :products_name_idx)
   .limit(20)
 
 # Expose BM25 score (raw negative value, more negative = better match)
-Product.bm25_search(:name, "headphones", select_score: true).limit(5)
+Product.bm25_search(:name, "headphones", index: :products_name_idx, select_score: true).limit(5)
 # product.bm25_score  # => -2.34
+
+# Score only (no ORDER BY), still filtered by default
+Product.bm25_search(:name, "headphones", index: :products_name_idx, select_score_only: true)
+
+# Predicate for manual WHERE composition
+Product.where(Product.bm25_match(:name, "headphones", index: :products_name_idx))
 ```
 
 ---
@@ -91,15 +97,18 @@ Product.bm25_search(:search_text, "headphones", index: :products_idx,
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `index` | Symbol/String | Explicit index name (required for partial indexes, prepared statements) |
+| `index` | Symbol/String | Explicit index name (recommended; required for prepared statements/partial indexes) |
 | `select_score` | Boolean/Symbol | Expose BM25 score as `bm25_score` or custom alias |
+| `select_score_only` | Boolean/Symbol | Expose score without adding `ORDER BY` |
+| `filter` | Boolean | Add BM25 match filter (`... <@> ... < 0`). Default: `true` |
+| `where` | Boolean | Apply extra fuzzy/pg_trgm WHERE conditions when `fuzzy` is used. Default: `true` |
 | `prefix` | Boolean | Append `:*` to each word for prefix matching |
 | `any_word` | Boolean | Match ANY term (OR) instead of ALL (AND) |
 | `negation` | Boolean | Support `!term` exclusion syntax |
 | `unaccent` | Boolean | Accent-insensitive search (requires `unaccent` extension) |
 | `fuzzy` | Hash/Boolean | Typo tolerance via `pg_trgm` similarity (`threshold: 0.3`) |
 | `synonyms` | Boolean | Use thesaurus dictionary (requires `dict_thesaurus` + thesaurus file) |
-| `highlight` | Boolean/Hash | Add `pg_search_highlight` via `ts_headline` |
+| `highlight` | Boolean/Hash | Add `pg_search_highlight` via `ts_headline` (`plainto_tsquery` for safe input) |
 | `ranked_by` | String | Custom ranking expression; `:bm25` replaced with score SQL |
 | `order_within_rank` | String | Tiebreaker ORDER BY (e.g., `updated_at DESC`) |
 
@@ -184,10 +193,10 @@ end
 ```ruby
 def search_with_facets
   base = Product.where(active: true)
-                .bm25_search(:search_text, params[:q], index: :products_search_idx)
+                .bm25_search(:search_text, params[:q], index: :products_search_idx, select_score: true)
 
   # Results with score
-  @products = base.select_score(true).limit(20)
+  @products = base.limit(20)
 
   # Facets via standard ActiveRecord aggregations
   @facets = {
@@ -428,7 +437,7 @@ PgTextsearch::Maintenance.enable_thesaurus!('thesaurus_en', 'thesaurus_en')
 
 ## Score Selection
 
-By default, only `ORDER BY` is added. Add `select_score: true` to expose the raw negative BM25 score:
+By default, `bm25_search` adds a BM25 match filter and `ORDER BY`. Add `select_score: true` to also expose the raw negative BM25 score:
 
 ```ruby
 products = Product.bm25_search(:search_text, "headphones", index: :products_search_idx, select_score: true).limit(5)
@@ -440,6 +449,18 @@ Custom alias:
 ```ruby
 products = Product.bm25_search(:search_text, "query", index: :idx, select_score: :relevance)
 products.first.relevance
+```
+
+Score without `ORDER BY`:
+
+```ruby
+products = Product.bm25_search(:search_text, "query", index: :idx, select_score_only: true)
+```
+
+Disable row filtering (ORDER BY-only ranking):
+
+```ruby
+products = Product.bm25_search(:search_text, "query", index: :idx, filter: false)
 ```
 
 ---

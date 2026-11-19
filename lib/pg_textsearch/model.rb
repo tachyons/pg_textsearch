@@ -6,13 +6,15 @@ module PgTextsearch
   # composes unchanged.
   module Model
     # has_bm25 :content, index: :docs_idx, unaccent: true, synonyms: true
-    # has_bm25 "data->>'description'", index: :events_expr_idx, expression: true
+    # has_bm25 "data->>'description'", index: :events_expr_idx
+    # has_bm25 :description_expr, index: :events_expr_idx, expression: "data->>'description'"
     def has_bm25(target, index:, expression: nil, **default_options)
       class_attribute :bm25_indexes, instance_accessor: false, default: {} unless respond_to?(:bm25_indexes)
       class_attribute :bm25_expressions, instance_accessor: false, default: {} unless respond_to?(:bm25_expressions)
       class_attribute :bm25_default_options, instance_accessor: false, default: {} unless respond_to?(:bm25_default_options)
       self.bm25_indexes = bm25_indexes.merge(target.to_s => index.to_s)
-      self.bm25_expressions = bm25_expressions.merge(target.to_s => expression) if expression
+      expr = expression == true ? target.to_s : expression
+      self.bm25_expressions = bm25_expressions.merge(target.to_s => expr) unless expr.nil? || expr == false
       self.bm25_default_options = bm25_default_options.merge(target.to_s => default_options)
     end
 

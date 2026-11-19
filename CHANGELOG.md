@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-19
+
+### Fixed
+- **#1**: Verified and tested that `prefix: true` is applied to both WHERE filtering and ORDER BY in `bm25_search`.
+- **#19**: `has_bm25 ... expression: true` now treats the target as the expression (instead of generating `true <@> ...`).
+
 ## [0.1.3] - 2026-11-19
 
 ### Added
