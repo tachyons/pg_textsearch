@@ -9,9 +9,10 @@ module PgTextsearch
     module_function
 
     def needs_compaction?(index)
-      connection.select_value(<<~SQL.squish)
+      result = connection.select_value(<<~SQL.squish)
         SELECT bm25_needs_compaction(#{quote(index)})
       SQL
+      ActiveModel::Type::Boolean.new.cast(result)
     end
 
     def compact(index)
@@ -77,9 +78,10 @@ module PgTextsearch
     # thesaurus: synonym dictionary
     # Usage: enable_thesaurus!('english', '/path/to/thesaurus_en') then use synonyms: true
     def thesaurus_available?(dict_name = "thesaurus_en")
-      connection.select_value(<<~SQL)
+      result = connection.select_value(<<~SQL)
         SELECT 1 FROM pg_ts_dict WHERE dictname = '#{dict_name}'
       SQL
+      !result.nil?
     end
 
     def enable_thesaurus!(dict_name = "thesaurus_en", dict_file = nil)
@@ -127,7 +129,7 @@ module PgTextsearch
     def extension_installed?(name)
       return false unless postgresql?
 
-      connection.select_value(<<~SQL)
+      !connection.select_value(<<~SQL).nil?
         SELECT 1 FROM pg_extension WHERE extname = '#{name}'
       SQL
     end

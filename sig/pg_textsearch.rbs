@@ -1,4 +1,66 @@
 module PgTextsearch
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+  class Error < StandardError
+  end
+
+  module Model
+    def self.extended: (Module base) -> void
+
+    def has_bm25: (
+      Symbol | String target,
+      index: Symbol | String,
+      ?expression: bool | String | Symbol | nil,
+      **untyped default_options
+    ) -> void
+
+    def bm25_search: (
+      Symbol | String | untyped target,
+      String query,
+      ?index: Symbol | String | nil,
+      **untyped options
+    ) -> untyped
+
+    def bm25_match: (
+      Symbol | String | untyped target,
+      String query,
+      ?index: Symbol | String | nil,
+      **untyped options
+    ) -> untyped
+  end
+
+  module Maintenance
+    def self.needs_compaction?: (Symbol | String index) -> bool
+    def self.compact: (Symbol | String index) -> untyped
+    def self.compact_step: (Symbol | String index) -> untyped
+    def self.spill_index: (Symbol | String index) -> untyped
+    def self.level_counts: (Symbol | String index) -> Array[Integer]
+
+    def self.unaccent_available?: () -> bool
+    def self.enable_unaccent!: () -> void
+    def self.pg_trgm_available?: () -> bool
+    def self.enable_pg_trgm!: () -> void
+    def self.thesaurus_available?: (?String dict_name) -> bool
+    def self.enable_thesaurus!: (?String dict_name, ?String? dict_file) -> void
+
+    def self.fuzzy_search_sql: (
+      Symbol | String | untyped target,
+      String query,
+      untyped index,
+      ?threshold: Numeric
+    ) -> String
+
+    def self.connection: () -> untyped
+    def self.quote: (Symbol | String | untyped name) -> String
+    def self.extension_installed?: (String name) -> bool
+    def self.postgresql?: () -> bool
+  end
+
+  module SchemaStatements
+    def add_index: (untyped table_name, untyped column_name, **untyped options) -> void
+    def indexes: (untyped table_name) -> Array[untyped]
+  end
+
+  module SchemaDumper
+  end
 end
