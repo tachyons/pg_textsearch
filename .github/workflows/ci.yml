@@ -123,5 +123,3 @@ jobs:
 
       - name: Publish to RubyGems (trusted publishing)
         uses: rubygems/release-gem@v1
-        with:
-          gem: pg_textsearch-*.gem
