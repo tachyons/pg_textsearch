@@ -118,6 +118,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+
       - name: Build gem
         run: gem build pg_textsearch.gemspec
 
